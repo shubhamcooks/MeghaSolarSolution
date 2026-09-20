@@ -1,0 +1,589 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================
+// USERS & PROFILES
+// ============================================
+
+model User {
+  id                      String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                   String                   @unique
+  passwordHash            String?                  @map("password_hash")
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  profile                 Profile?
+  serviceEnquiriesCreated ServiceEnquiry[]         @relation("ServiceEnquiryUser")
+  serviceEnquiriesAssigned ServiceEnquiry[]        @relation("ServiceEnquiryAssigned")
+  energyAnalysesCreated   EnergyAnalysis[]         @relation("EnergyAnalysisUser")
+  energyAnalysesAssigned  EnergyAnalysis[]         @relation("EnergyAnalysisAssigned")
+  energyAnalysesVerified  EnergyAnalysis[]         @relation("EnergyAnalysisVerified")
+  energyBillsCorrected    EnergyBill[]
+  energyReportsGenerated  EnergyAnalysisReport[]
+  solarCalculations       SolarCalculation[]
+  assumptionsUpdated      SolarCalculationAssumption[]
+  districtsUpdated        District[]
+  tenderUpdatesCreated    TenderUpdate[]
+  tenderDocumentsUploaded TenderDocument[]
+  passwordResetTokens     PasswordResetToken[]
+  appointmentsUser        Appointment[]            @relation("AppointmentUser")
+  appointmentsAssigned    Appointment[]            @relation("AppointmentAssigned")
+  appointmentsCreated     Appointment[]            @relation("AppointmentCreated")
+  cmsContentUpdated       CmsContent[]
+  auditLogs               AuditLog[]
+
+  @@map("users")
+}
+
+model Profile {
+  id                      String                   @id @db.Uuid
+  user                    User                     @relation(fields: [id], references: [id], onDelete: Cascade)
+  fullName                String                   @map("full_name")
+  phone                   String?
+  email                   String?
+  role                    String                   @default("customer")
+  address                 String?
+  lastLoginAt             DateTime?                @map("last_login_at") @db.Timestamptz
+  isSuspended             Boolean                  @default(false) @map("is_suspended")
+  languagePreference      String                   @default("en") @map("language_preference")
+  notificationPreferences Json                     @default("{\"email\": true, \"sms\": false, \"push\": true}") @map("notification_preferences")
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relationships
+  applicationsCreated     Application[]            @relation("ApplicationUser")
+  applicationsAssigned    Application[]            @relation("ApplicationStaff")
+  statusHistoryStaff      ApplicationStatusHistory[]
+  siteAssessmentsAssessed SiteAssessment[]
+  installationsAssigned   Installation[]
+  serviceRequestsUser     ServiceRequest[]         @relation("ServiceRequestUser")
+  serviceRequestsAssigned ServiceRequest[]         @relation("ServiceRequestStaff")
+  documents               Document[]
+  notifications           Notification[]
+
+  @@map("profiles")
+}
+
+// ============================================
+// APPLICATIONS & INSTALLATIONS
+// ============================================
+
+model Application {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicationId          String                   @unique @map("application_id")
+  userId                 String?                  @map("user_id") @db.Uuid
+  user                   Profile?                 @relation("ApplicationUser", fields: [userId], references: [id], onDelete: SetNull)
+  status                 String                   @default("NEW")
+  assignedStaffId        String?                  @map("assigned_staff_id") @db.Uuid
+  assignedStaff          Profile?                 @relation("ApplicationStaff", fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  fullName               String                   @map("full_name")
+  mobileNumber           String                   @map("mobile_number")
+  email                  String?
+  address                String?
+  state                  String?
+  district               String?
+  block                  String?
+  villageTown            String?                  @map("village_town")
+  pinCode                String?                  @map("pin_code")
+  installationAddress    String?                  @map("installation_address")
+  mapLocation            String?                  @map("map_location")
+  hasElectricity         Boolean?                 @default(false) @map("has_electricity")
+  consumerNumber         String?                  @map("consumer_number")
+  electricityProvider    String?                  @map("electricity_provider")
+  monthlyUsage           String?                  @map("monthly_usage")
+  hasExistingSolar       Boolean?                 @default(false) @map("has_existing_solar")
+  roofType               String?                  @map("roof_type")
+  interestedRooftopSolar Boolean?                 @default(true) @map("interested_rooftop_solar")
+  estimatedSystemSize    String?                  @map("estimated_system_size")
+  primaryPurpose         String?                  @map("primary_purpose")
+  propertyType           String?                  @map("property_type")
+  requestType            String?                  @map("request_type")
+  notes                  String?
+  createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  statusHistory          ApplicationStatusHistory[]
+  siteAssessments        SiteAssessment[]
+  installations          Installation[]
+  serviceRequests        ServiceRequest[]
+  documents              Document[]
+  appointments           Appointment[]
+
+  @@index([userId], map: "idx_applications_user_id")
+  @@index([status], map: "idx_applications_status")
+  @@index([applicationId], map: "idx_applications_application_id")
+  @@index([assignedStaffId], map: "idx_applications_assigned_staff")
+  @@map("applications")
+}
+
+model ApplicationStatusHistory {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicationId String      @map("application_id") @db.Uuid
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  status        String
+  comment       String?
+  staffId       String?     @map("staff_id") @db.Uuid
+  staff         Profile?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  attachmentUrl String?     @map("attachment_url")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([applicationId], map: "idx_history_application_id")
+  @@map("application_status_history")
+}
+
+model SiteAssessment {
+  id                     String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicationId          String      @map("application_id") @db.Uuid
+  application            Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  roofCondition          String?     @map("roof_condition")
+  roofArea               String?     @map("roof_area")
+  solarPotential         String?     @map("solar_potential")
+  electricalRequirements String?     @map("electrical_requirements")
+  feasibility            String?
+  notes                  String?
+  assessedBy             String?     @map("assessed_by") @db.Uuid
+  assessedByProfile      Profile?    @relation(fields: [assessedBy], references: [id], onDelete: SetNull)
+  createdAt              DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([applicationId], map: "idx_site_assessments_application_id")
+  @@map("site_assessments")
+}
+
+model Installation {
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicationId   String                  @map("application_id") @db.Uuid
+  application     Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  assignedStaffId String?                 @map("assigned_staff_id") @db.Uuid
+  assignedStaff   Profile?                @relation(fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  scheduledDate   DateTime?               @map("scheduled_date") @db.Date
+  completedDate   DateTime?               @map("completed_date") @db.Date
+  status          String                  @default("PENDING")
+  notes           String?
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  checklist       InstallationChecklist[]
+
+  @@index([applicationId], map: "idx_installations_application_id")
+  @@index([assignedStaffId], map: "idx_installations_assigned_staff")
+  @@map("installations")
+}
+
+model InstallationChecklist {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  installationId String       @map("installation_id") @db.Uuid
+  installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  item           String
+  completed      Boolean      @default(false)
+  completedAt    DateTime?    @map("completed_at") @db.Timestamptz
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("installation_checklist")
+}
+
+// ============================================
+// SERVICES & ENQUIRIES
+// ============================================
+
+model ServiceRequest {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String?      @map("user_id") @db.Uuid
+  user            Profile?     @relation("ServiceRequestUser", fields: [userId], references: [id], onDelete: SetNull)
+  applicationId   String?      @map("application_id") @db.Uuid
+  application     Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  type            String       @default("service")
+  serviceType     String?      @default("repair") @map("service_type")
+  description     String?
+  status          String       @default("OPEN")
+  assignedStaffId String?      @map("assigned_staff_id") @db.Uuid
+  assignedStaff   Profile?     @relation("ServiceRequestStaff", fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_service_requests_user_id")
+  @@map("service_requests")
+}
+
+model ServiceEnquiry {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId               String?  @map("user_id") @db.Uuid
+  user                 User?    @relation("ServiceEnquiryUser", fields: [userId], references: [id], onDelete: SetNull)
+  serviceType          String   @default("solar_water_heater") @map("service_type")
+  name                 String
+  phone                String
+  email                String?
+  address              String
+  propertyType         String?  @map("property_type")
+  numPeople            Int?     @map("num_people")
+  hotWaterRequirement String?  @map("hot_water_requirement")
+  preferredLocation    String?  @map("preferred_location")
+  message              String?
+  status               String   @default("pending")
+  adminNotes           String?  @map("admin_notes")
+  assignedTo           String?  @map("assigned_to") @db.Uuid
+  assignedUser         User?    @relation("ServiceEnquiryAssigned", fields: [assignedTo], references: [id], onDelete: SetNull)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_service_enquiries_user")
+  @@index([status], map: "idx_service_enquiries_status")
+  @@map("service_enquiries")
+}
+
+// ============================================
+// ENERGY ANALYSES & CALCULATIONS
+// ============================================
+
+model EnergyAnalysis {
+  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String                 @map("user_id") @db.Uuid
+  user                  User                   @relation("EnergyAnalysisUser", fields: [userId], references: [id], onDelete: Cascade)
+  status                String                 @default("submitted")
+  analysisPeriodStart   DateTime?              @map("analysis_period_start") @db.Date
+  analysisPeriodEnd     DateTime?              @map("analysis_period_end") @db.Date
+  dataAvailabilityNote  String?                @map("data_availability_note")
+  adminNotes            String?                @map("admin_notes")
+  assignedTo            String?                @map("assigned_to") @db.Uuid
+  assignedUser          User?                  @relation("EnergyAnalysisAssigned", fields: [assignedTo], references: [id], onDelete: SetNull)
+  verifiedBy            String?                @map("verified_by") @db.Uuid
+  verifiedUser          User?                  @relation("EnergyAnalysisVerified", fields: [verifiedBy], references: [id], onDelete: SetNull)
+  verifiedAt            DateTime?              @map("verified_at") @db.Timestamptz
+  submittedAt           DateTime?              @default(now()) @map("submitted_at") @db.Timestamptz
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  bills                 EnergyBill[]
+  reports               EnergyAnalysisReport[]
+
+  @@index([userId], map: "idx_energy_analyses_user")
+  @@index([status], map: "idx_energy_analyses_status")
+  @@map("energy_analyses")
+}
+
+model EnergyBill {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  energyAnalysisId String         @map("energy_analysis_id") @db.Uuid
+  energyAnalysis   EnergyAnalysis @relation(fields: [energyAnalysisId], references: [id], onDelete: Cascade)
+  billingMonth     Int            @map("billing_month")
+  billingYear      Int            @map("billing_year")
+  unitsConsumed    Decimal        @map("units_consumed")
+  billAmount       Decimal        @map("bill_amount")
+  billingDays      Int?           @map("billing_days")
+  fileUrl          String?        @map("file_url")
+  fileName         String?        @map("file_name")
+  isVerified       Boolean?       @default(false) @map("is_verified")
+  correctedBy      String?        @map("corrected_by") @db.Uuid
+  correctedUser    User?          @relation(fields: [correctedBy], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([energyAnalysisId], map: "idx_energy_bills_analysis")
+  @@map("energy_bills")
+}
+
+model EnergyAnalysisReport {
+  id                           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  energyAnalysisId             String         @map("energy_analysis_id") @db.Uuid
+  energyAnalysis               EnergyAnalysis @relation(fields: [energyAnalysisId], references: [id], onDelete: Cascade)
+  reportData                   Json           @default("{}") @map("report_data")
+  chartsData                   Json?          @default("{}") @map("charts_data")
+  consumptionTrends            Json?          @map("consumption_trends")
+  expenditureTrends            Json?          @map("expenditure_trends")
+  estimatedSolarRequirementKw Decimal?        @map("estimated_solar_requirement_kw")
+  estimatedAnnualGenerationKwh Decimal?        @map("estimated_annual_generation_kwh")
+  estimatedAnnualSavings       Decimal?        @map("estimated_annual_savings")
+  assumptions                  String?
+  limitations                  String?
+  rdExplanation                String?        @map("rd_explanation")
+  isShared                     Boolean?       @default(false) @map("is_shared")
+  sharedAt                     DateTime?      @map("shared_at") @db.Timestamptz
+  generatedBy                  String?        @map("generated_by") @db.Uuid
+  generatedUser                User?          @relation(fields: [generatedBy], references: [id], onDelete: SetNull)
+  createdAt                    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                    DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("energy_analysis_reports")
+}
+
+model SolarCalculation {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String?
+  inputs    Json     @default("{}")
+  results   Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_solar_calculations_user")
+  @@map("solar_calculations")
+}
+
+model SolarCalculationAssumption {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  label       String
+  key         String   @unique
+  value       Decimal
+  unit        String?
+  description String?
+  isActive    Boolean? @default(true) @map("is_active")
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  updatedUser User?    @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("solar_calculation_assumptions")
+}
+
+// ============================================
+// TENDERS, PROJECTS & CMS CONTENT
+// ============================================
+
+model Tender {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title              String
+  department         String?
+  tenderNumber       String?          @map("tender_number")
+  location           String?
+  publishedDate      DateTime?        @map("published_date") @db.Date
+  closingDate        DateTime?        @map("closing_date") @db.Date
+  status             String?          @default("active")
+  documentUrl        String?          @map("document_url")
+  referenceNumber    String?          @map("reference_number")
+  organization       String?
+  projectDescription String?          @map("project_description")
+  submissionDeadline DateTime?        @map("submission_deadline") @db.Date
+  awardedDate        DateTime?        @map("awarded_date") @db.Date
+  completionDate     DateTime?        @map("completion_date") @db.Date
+  internalNotes      String?          @map("internal_notes")
+  isPublished        Boolean?         @default(true) @map("is_published")
+  archivedAt         DateTime?        @map("archived_at") @db.Timestamptz
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  updates            TenderUpdate[]
+  documents          TenderDocument[]
+
+  @@map("tenders")
+}
+
+model TenderUpdate {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenderId    String   @map("tender_id") @db.Uuid
+  tender      Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  updateTitle String   @map("update_title")
+  updateText  String   @map("update_text")
+  isPublic    Boolean? @default(true) @map("is_public")
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdUser User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenderId], map: "idx_tender_updates_tender")
+  @@map("tender_updates")
+}
+
+model TenderDocument {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenderId     String   @map("tender_id") @db.Uuid
+  tender       Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  fileName     String   @map("file_name")
+  fileUrl      String   @map("file_url")
+  fileType     String?  @map("file_type")
+  isPublic     Boolean? @default(true) @map("is_public")
+  uploadedBy   String?  @map("uploaded_by") @db.Uuid
+  uploadedUser User?    @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenderId], map: "idx_tender_documents_tender")
+  @@map("tender_documents")
+}
+
+model Project {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String
+  location    String?
+  description String?
+  services    String?
+  imageUrl    String?  @map("image_url")
+  status      String?  @default("completed")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("projects")
+}
+
+model CmsContent {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pageKey      String   @map("page_key")
+  sectionKey   String   @map("section_key")
+  contentKey   String   @map("content_key")
+  contentValue String?  @map("content_value")
+  contentJson  Json?    @map("content_json")
+  isPublished  Boolean? @default(true) @map("is_published")
+  updatedBy    String?  @map("updated_by") @db.Uuid
+  updatedUser  User?    @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([pageKey, sectionKey, contentKey])
+  @@index([pageKey], map: "idx_cms_content_page")
+  @@map("cms_content")
+}
+
+model Faq {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  question  String
+  answer    String
+  category  String?  @default("general")
+  sortOrder Int?     @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("faqs")
+}
+
+model GovernmentInformation {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String   @unique
+  title     String
+  content   String
+  category  String?  @default("general")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("government_information")
+}
+
+// ============================================
+// SYSTEM, LOCATIONS & UTILITIES
+// ============================================
+
+model District {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String   @unique
+  region            String?
+  coverageStatus    String   @default("planned_coverage") @map("coverage_status")
+  availableServices String[] @default([]) @map("available_services")
+  isActive          Boolean? @default(true) @map("is_active")
+  displayOrder      Int?     @default(0) @map("display_order")
+  updatedBy         String?  @map("updated_by") @db.Uuid
+  updatedUser       User?    @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([isActive], map: "idx_districts_active")
+  @@map("districts")
+}
+
+model Location {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  description String?
+  available   Boolean  @default(true)
+  sortOrder   Int?     @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("locations")
+}
+
+model Appointment {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  user            User         @relation("AppointmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  applicationId   String?      @map("application_id") @db.Uuid
+  application     Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  appointmentType String       @default("site_assessment") @map("appointment_type")
+  scheduledDate   DateTime     @map("scheduled_date") @db.Date
+  scheduledTime   DateTime?    @map("scheduled_time") @db.Time
+  location        String?
+  notes           String?
+  status          String       @default("scheduled")
+  assignedTo      String?      @map("assigned_to") @db.Uuid
+  assignedUser    User?        @relation("AppointmentAssigned", fields: [assignedTo], references: [id], onDelete: SetNull)
+  createdBy       String?      @map("created_by") @db.Uuid
+  createdUser     User?        @relation("AppointmentCreated", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_appointments_user")
+  @@index([scheduledDate], map: "idx_appointments_date")
+  @@map("appointments")
+}
+
+model Document {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  applicationId String?      @map("application_id") @db.Uuid
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  userId        String?      @map("user_id") @db.Uuid
+  user          Profile?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  fileName      String       @map("file_name")
+  fileUrl       String       @map("file_url")
+  fileType      String?      @map("file_type")
+  fileSize      BigInt?      @map("file_size")
+  documentType  String?      @map("document_type")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([applicationId], map: "idx_documents_application_id")
+  @@map("documents")
+}
+
+model Notification {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String?
+  type      String?  @default("general")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_notifications_user_id")
+  @@map("notifications")
+}
+
+model ContactEnquiry {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  phone     String?
+  email     String?
+  location  String?
+  message   String
+  status    String?  @default("new")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("contact_enquiries")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+  ipAddress String?   @map("ip_address")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_password_reset_tokens_user")
+  @@index([expiresAt], map: "idx_password_reset_tokens_expires")
+  @@map("password_reset_tokens")
+}
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  details    Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_audit_logs_user")
+  @@index([action], map: "idx_audit_logs_action")
+  @@map("audit_logs")
+}
